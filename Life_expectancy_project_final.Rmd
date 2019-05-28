@@ -1,0 +1,1527 @@
+---
+title: "Drivers of life expectancy: a study of public policy and international health"
+author: "Owen Callen, Vladislav Kozlovsky, and Amy Wen"
+fontsize: 11pt
+geometry: margin=1in
+output:
+  pdf_document:
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(car)
+library(alr3)
+library(cluster)
+library(caret)
+library(e1071)
+library(MASS)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Stat 109 Final Project \hfill May 6, 2019
+
+***
+
+# Introduction
+
+## Motivation
+We were motivated by a desire to find out what measures could be made from a public health perspective to improve health and well-being in a given population. We were able to find some datasets from the World Health Organization (WHO) and the UN's World Happiness Report (WHR) that contain attributes for various countries that we suspect have an influence on life expectancy, such as GDP, disease burden, and social support. Ideally, we would like to identify predictive attributes for which we could recommend actionable items that would potentially have the most impact. For example, if percentage of DTP3 immunization coverage among one-year-olds is highly predictive of life expectancy, then increasing DTP3 immunization coverage would be a good measure to undertake (although we are aware that correlation does not necessarily imply causation).
+
+## Research Question
+Our specific research question is whether or not there exists a relationship between life expectancy and various indicators of physical, economic, and emotional well-being, and the relative importance of any such relationships uncovered.
+
+## Hypotheses
+We hypothesize from the list of attributes we are considering that among the top predictors for life expectancy are:
+
+1. **Status:** It is expected that a developed country would generally have a higher life expectancy than a developing country.
+2. **Adult Mortality:** A high rate of adult mortality should directly translate to a lower life expectancy.
+3. **Immunization:** Rates of immunizations in generally are likely to be highly correlated with each other, but at least one of the immunization categories (HepB, Polio, and Diphtheria) should be predictive of life expectancy, with a higher rate of immunization corresponding with a higher life expectancy.
+
+In addition, we are also looking to test if failing to include social or emotional markers from WHR data results in hidden variable bias. If we determine that point estimates for health and economic indicators are significantly different with and without controlling for social and emotional factors, this would suggest future studies into human well-being and life expectancy would need to control for these factors to obtain valid results.
+
+## Methods and Data Sources
+
+### WHO Data
+
+Data was originally obtained from a [Kaggle dataset](https://www.kaggle.com/kumarajarshi/life-expectancy-who), which combined life expectancy and health data from the WHO Global Health Observatory with economic data from the UN Human Development Reports. As we explain later, PercentExpenditure and BMI were manually replaced due to apparent corruption in the data.
+
+Our dependent variable:
+
+* **LifeExpectancy:** Life Expectancy in years.
+
+21 predictive variables:
+
+* General variables:
+
+1. **Country:** Country
+2. **Year:** Year
+3. **Status:** Developed or Developing
+
+* Variables related to death/mortality:
+
+4. **AdultMortality:** Probability of dying between 15 and 60 years per 1000 population
+5. **InfantDeaths:** Number of Infant Deaths per 1000 population
+6. **UnderFiveDeaths:** Number of under-five deaths per 1000 population
+7. **HIVAIDS:** Deaths per 1000 live births due to HIV/AIDS (0-4 years)
+
+* Variables related to disease:
+
+8. **Measles:** Number of reported measles cases per 1000 population
+
+* Variables related to vaccinations:
+
+9. **HepB:** Hepatitis B immunization coverage among 1-year-olds (%)
+10. **Polio:** Polio (Pol3) immunization coverage among 1-year-olds (%)
+11. **Diphtheria:** Diphtheria tetanus toxoid and pertussis (DTP3) immunization coverage among 1-year-olds (%)
+
+* Variables related to country resources:
+
+12. **PercentExpenditure:** Expenditure on health as a percentage of GDP per capita (%)
+13. **TotalExpenditure:** General government expenditure on health as a percentage of total government expenditure (%)
+14. **IncomeComposition:** Human Development Index as a measure of standard of living/income composition of resources (index ranging from 0 to 1)
+15. **GDP:** Gross Domestic Product per capita (in USD)
+
+* Variables related to health/nutrition:
+
+16. **Alcohol:** Liters of pure alcohol consumed per capita (15+)
+17. **BMI:** Average Body Mass Index of entire population
+18. **Thin59:** Prevalence of thinness among children ages 5 to 9 (%)
+19. **Thin1019:** Prevalence of thinness among children and adolescents ages 10 to 19 (%)
+
+* Other variables:
+20. **Population:** Population of the country
+21. **Schooling:** Average expected number of years of schooling
+
+### World Happiness Report Data
+
+We noticed a lack of social and emotional indicators in the WHO data, and (as stated above) we wanted to discover if there was a problem with hidden variable bias if we failed to consider these kinds of indicators into our analysis, so we looked for data that might alow us to control for emotional and social factors. We decided to incorporate data from the [2015 World Happiness Report](https://worldhappiness.report/ed/2015/) by the United Nations Sustainable Development Solutions Network. The indicators we included:
+
+* **Healthy.life.expectancy.at.birth:** Life Expectancy in years (measured slightly differently than in WHO, more on this in EDA:Merged Data).
+
+22. **Social.support:**  Percentage of people who responded positively to the question: “If you were in trouble, do you have relatives or friends you can count on to help you whenever you need them, or not?”. -2015 World Happiness Report, page 22      
+
+23. **Freedom.to.make.life.choices:** Percentage of people who responded positively to the question: “Are you satisfied or dissatisfied with your freedom to choose what you do with your life?”. -2015 World Happiness Report, page 22
+
+24. **Generosity:**  "Generosity is the residual of regressing the national average of GWP responses to the question “Have you donated money to a charity in the past month?” on GDP per capita." -2015 World Happiness Report, page 22
+
+25. **Perceptions.of.corruption:**  "Perceptions of corruption are the average of binary answers to two GWP questions: “Is corruption widespread throughout the government or not?” and “Is corruption widespread within businesses or not?”" -2015 World Happiness Report, page 22
+
+26. **Positive.affect:** "Positive affect is defined as the average of previous-day affect measures for happiness, laughter and enjoyment for GWP waves 3-7" -2015 World Happiness Report, page 22
+
+27. **Negative.affect:**  "Negative affect is defined as the average of previous-day affect measures for worry, sadness and anger for all waves." -2015 World Happiness Report, page 22
+
+28. & 29. **Democratic.Quality, Delivery.Quality:** "[...]a number of studies have divided the World Bank’s six main indicators of governmental quality into two groups, with the four indicators for effectiveness, rule of law, quality of regulation, and control of corruption combined to form an index of the quality of delivery, and the two indicators for voice and accountability and for political stability and absence of violence combined to form an index of the democratic quality of government." [World Happiness Report](https://worldhappiness.report/ed/2019/changing-world-happiness/)
+
+### Assumptions, Limitations, and P-values
+
+Except where noted we are depending on the accuracy of the data provided from the WHO and WHR. Much of this data is survey data that may not be reflective of the entire population. There are also quite a number of countries with missing data for certain measures and years, so in the end we limited our final analysis to 103 observations for the year 2011.
+
+Throughout this project we are testing almost 30 variables with only 103 rows of data. Additionally, we are doing multiple hypothesis testing at once. Using the Bonferroni correction of $\alpha*=0.05/n$, where $n$ is the number of hypothesis tests being performed simultaneously, we estimated that we wanted to go down to an $\alpha$ of 0.01 to test for statistical significance for our backwards stepwise regression rather than $\alpha$ = 0.05 by assuming we get a final model that has around 5 variables.
+
+### Process
+
+In doing our analysis we generally followed the steps below:
+
+1.  Clean data and perform Exploratory Data Analysis.
+
+2.  Merge WHO and WHR datasets.
+
+3.  Transform variables where appropriate (most often using Box-Cox).
+
+4.  Use stepwise regression for variable selection/model building (first without WHR, then with WHR data).
+
+5.  Check model validity by verifying all linear model assumptions.
+
+6.  Check back on original hypotheses, to see which variables have a statistically significant effect on life expectancy.
+
+7.  Use the partial F-test, and examine confidence intervals for coefficient estimates to determine if there is evidence of hidden variable bias when not considering social and emotional factors.
+
+\pagebreak
+
+# Results
+
+## Summary of Results
+
+### WHO Only Model
+
+
+Coefficients:
+
+|                    | Estimate | Std. Error | t value | Pr(>\|t\|)   
+|:------------------ | --------:|-----------:| -------:|-------------:                     
+(Intercept)          | 56.53875 |   3.11419  | 18.155  | < 2e-16 ***
+adult.mortality.sqrt | -0.34323 |   0.09851  | -3.484  | 0.000739 ***
+hivaids.1oversqrt    |  3.70428 |   0.49332  |  7.509  | 2.79e-11 ***
+thin.10.19.power0.15 | -2.05804 |   0.53362  | -3.857  | 0.000206 ***
+schooling            |  0.92519 |   0.19518  |  4.740  | 7.24e-06 ***
+
+All modeling assumptions held for this model.
+
+### WHO and WHR
+
+Coefficients:
+
+|                        | Estimate | Std. Error | t value | Pr(>\|t\|)    
+|:---------------------- | --------:|-----------:| -------:|-------------:                     
+(Intercept)              |  52.5070 |    3.5138  | 14.943  |  < 2e-16 ***
+adult.mortality.sqrt     |  -0.3008 |    0.0873  | -3.445  | 0.000847 ***
+infant.deaths.shift1.log |  -0.9627 |    0.2488  | -3.868  | 0.000200 ***
+hivaids.1oversqrt        |   4.4092 |    0.4028  | 10.946  | < 2e-16 ***
+positive.affect          |  13.7794 |    3.3446  |  4.120  | 8.04e-05 ***
+negative.affect          |  13.9296 |    4.9942  |  2.789  | 0.006373 ** 
+delivery.quality         |   2.6422 |    0.5497  |  4.806  | 5.68e-06 ***
+
+All modeling assumptions held for this model.
+
+The only variable we hypothesized would be a key predictor that ended up in our final model was adult mortality. However, the group of predictors we did end up with still make intuitive sense. 
+
+In our partial F test, we discovered that we could not simply drop all emotional and social markers (p << .01).
+
+While our models both with and without emotional factors do contain some of same predictors, we also observe some notable changes:  
+
+1. The original model used the prevalence of thinness in individuals aged 10-19, while the new model does not.
+
+2. The original model used the number of years of schooling, while the new model does not.
+
+3. The original model did not find infant deaths to be statistically significant (using our reduced alpha value), but it does appear to be an important factor in the new model.
+
+4. In terms of social and emotional variables, the delivery quality of government services, reporting feeling positive emotions, and reporting feeling negative emotions (this was marginal) were all statistically significant when predicting life expectancy.
+
+We did have some surprises when it comes to interpretation of variables.  In the model that included emotional markers, both positive and negative emotions were positively correlated with longer life expectancy. This was initially surprising to our team, however, this may indicate that a lack of emotions is associated with shorter life expectancy. It should be noted that as the prevalence of HIV/AIDS goes up, we expect life expectancy to go down. At the same time, our transformed variable hivaids.1oversqrt goes down, so the positive coefficient on hivaids.1oversqrt is not surprising.
+
+As for the point estimates for the indicators that we did keep between the 2 models, confidence intervals for the point estimates for both models contained the point estimates for the other models, so we did not observe significant evidence of hidden variable bias in the variables that we retained. However, the fact that we did not end up with the same set of variables indicates that failing to control for emotional markers in health research may result in radically different findings. We would recommend that future health research control for both social and emotional factors.
+
+\pagebreak
+## Full Results
+
+### Exploratory Data Analysis
+
+We examined the data from the two datasets we wanted to combine. One contained health and economic well-being indicators from the WHO Global Health Observatory and the UN Human Development Reports (shortened to WHO data), while another contained emotional well-being indicators from the World Happiness Report (WHR data).
+
+#### WHO Data
+
+We first looked at the WHO data and cleaned up and reorganized the predictor variables so that they were grouped by common themes (deaths, diseases, vaccinations, economic resources, health/nutrition, and population/schooling) (See Appendix A). Histograms of the outcome variable (life expectancy) and the various predictor variables are shown below. Note that many of the variables are highly skewed, so we will need to transform them later. There are also some strange values for PercentExpenditure and BMI that will needed to be investigated later since PercentExpenditure should not be greater than 100% and BMI should not reach values of 80.
+
+```{r, include=FALSE}
+# Load data
+lifeData = read.csv("Life Expectancy Data.csv")
+
+# Remove rows with NA
+lifeData = na.omit(lifeData)
+
+# Reorder data so outcome (life expectancy) is first and grab Country, Year, and Status
+lifeData.new = cbind(LifeExpectancy=lifeData$Life.expectancy, lifeData[ , 1:3])
+
+# Group other data according to common themes
+lifeData.new = cbind(lifeData.new,
+                     AdultMortality=lifeData$Adult.Mortality, # Deaths
+                     InfantDeaths=lifeData$infant.deaths,
+                     UnderFiveDeaths=lifeData$under.five.deaths,
+                     HIVAIDS=lifeData$HIV.AIDS,
+                     Measles=lifeData$Measles, # Diseases
+                     HepB=lifeData$Hepatitis.B, # Vaccinations
+                     Polio=lifeData$Polio, Diphtheria=lifeData$Diphtheria,
+                     PercentExpenditure=lifeData$percentage.expenditure, # Economic Resources
+                     TotalExpenditure=lifeData$Total.expenditure,
+                     IncomeComposition=lifeData$Income.composition.of.resources,
+                     GDP=lifeData$GDP,
+                     Alcohol=lifeData$Alcohol, BMI=lifeData$BMI, # Health/Nutrition
+                     Thin59=lifeData$thinness.5.9.years,
+                     Thin1019=lifeData$thinness..1.19.years, 
+                     Population=lifeData$Population, # Other (population/schooling)
+                     Schooling=lifeData$Schooling)
+```
+
+```{r, fig.height=3, fig.width=3}
+# Histogram of outcome (life expectancy)
+hist(lifeData.new$LifeExpectancy, xlab=names(lifeData.new)[1], ylab="Frequency",
+       main=names(lifeData.new)[1], col = "deepskyblue3")
+```
+
+```{r, fig.height=4.9}
+# Histogram of predictive variables
+oldpar = par(mfrow = c(3, 3))
+for (i in 5:22) {
+  hist(lifeData.new[ , i], xlab=names(lifeData.new)[i], ylab="Frequency",
+       main=names(lifeData.new)[i], col = "deepskyblue3")
+}
+par(oldpar)
+```
+
+\pagebreak
+
+#### WHR Data
+
+We next examined the WHR data to see what information was available. Many of the years did not have data from all the countries, so we decided to limit our analysis to 2011, which had at least some data available for the most countries (See Appendix B).
+
+```{r, include=FALSE}
+# Load WHR data
+whr.df = read.csv("Table 2.1.csv") 
+
+# Consider only 2011 data
+whr.2011 = whr.df[whr.df$Year==2011,]
+```
+
+Some of the predictor variables from the WHR had a lot of missing information. For example, survey data on people's perception on how much most people could be trusted had up to 138 out of 164 entries missing. Since we did not have data to incorporate the columns with large amounts of missing data, we had to get rid of important markers that indicate levels of social trust (See Appendix B). From the remaining data, we had to also drop some rows missing data for Perceptions.of.corruption, which is less than 5\% of our data.
+
+```{r, include=FALSE}
+# Take subset of data (remove columns)
+whr.2011 = subset(whr.2011, select = -c(Confidence.in.national.government, # Missing data
+                                        Most.people.can.be.trusted..Gallup,
+                                        Most.people.can.be.trusted..WVS.round.1981.1984,
+                                        Most.people.can.be.trusted..WVS.round.1989.1993,
+                                        Most.people.can.be.trusted..WVS.round.1994.1998,
+                                        Most.people.can.be.trusted..WVS.round.1999.2004,
+                                        Most.people.can.be.trusted..WVS.round.2005.2009,
+                                        Most.people.can.be.trusted..WVS.round.2010.2014,
+                                        
+                                        Year, # Only looking at 2011
+                                        WP5.Country, # Not a predictor.
+                                        Life.Ladder, # Linear combination of other predictors
+                                        Log.GDP.per.capita)) # GDP already in WHO data
+
+# Take subset of data (remove rows)
+whr.2011.clean = whr.2011[!is.na(whr.2011$Perceptions.of.corruption),]
+```
+
+After cleaning the data, we examined histograms of the predictive variables to get an idea of their distribution. Overall, they look pretty good compared to the WHO data, with much less skew.
+
+```{r, fig.height=4.9}
+# Histogram of predictive variables
+oldpar = par(mfrow = c(3, 3))
+for (i in c(2:10)) {
+  hist(whr.2011.clean[ , i], xlab=names(whr.2011.clean)[i], ylab="Frequency",
+       main=names(whr.2011.clean)[i], col = "deepskyblue3")
+}
+par(oldpar)
+```
+
+
+#### Merged Data
+
+We finally want to combine the two datasets to consolidate all the predictors into one dataframe. As mentioned before, the WHO dataset had some anomalies to it. Since we decided to look only at 2011 based on the data available from the WHR, we went back to the primary sources (WHO Global Health Observatory and UN Human Development Reports) and obtained the data specifically for 2011 for PercentExpenditure and BMI with similar cleaning and reordering as before (See Appendix C). As can be observed below, PercentExpenditure now varies only from 0 to 20% and BMI only varies from 20 to 30, which are reasonable and make better sense than exceeding 100% and going up to 80, respectively.
+
+```{r, include=FALSE}
+# Load 2011 data
+lifeData.2011 = read.csv("Life Expectancy Data 2011.csv")
+
+# Remove rows with NA
+lifeData.2011 = na.omit(lifeData.2011)
+
+# Reorder data so outcome (life expectancy) is first and grab Country, Year, and Status
+lifeData.new = cbind(LifeExpectancy=lifeData.2011$Life.expectancy, lifeData.2011[ , 1:3])
+
+# Group other data according to common themes
+lifeData.new = cbind(lifeData.new,
+                     AdultMortality=lifeData.2011$Adult.Mortality, # Deaths
+                     InfantDeaths=lifeData.2011$infant.deaths,
+                     UnderFiveDeaths=lifeData.2011$under.five.deaths,
+                     HIVAIDS=lifeData.2011$HIV.AIDS,
+                     Measles=lifeData.2011$Measles, # Diseases
+                     HepB=lifeData.2011$Hepatitis.B, # Vaccinations
+                     Polio=lifeData.2011$Polio, Diphtheria=lifeData.2011$Diphtheria,
+                     PercentExpenditure=lifeData.2011$percentage.expenditure, # Economic Resources
+                     TotalExpenditure=lifeData.2011$Total.expenditure,
+                     IncomeComposition=lifeData.2011$Income.composition.of.resources,
+                     GDP=lifeData.2011$GDP,
+                     Alcohol=lifeData.2011$Alcohol, BMI=lifeData.2011$BMI, # Health/Nutrition
+                     Thin59=lifeData.2011$thinness.5.9.years,
+                     Thin1019=lifeData.2011$thinness..1.19.years, 
+                     Population=lifeData.2011$Population, # Other (population/schooling)
+                     Schooling=lifeData.2011$Schooling)
+lifeData.2011 = lifeData.new
+```
+
+```{r, fig.height=2}
+# Histogram of corrected predictive variables
+oldpar = par(mfrow = c(1, 3))
+for (i in c(13,18)) {
+  hist(lifeData.2011[ , i], xlab=names(lifeData.2011)[i], ylab="Frequency",
+       main=names(lifeData.2011)[i], col = "deepskyblue3")
+}
+par(oldpar)
+```
+
+Now satisfied with our two datasets, we merged them by country to obtain a final clean dataset. Since both datasets had variables corresponding to life expectancy in them, we did a final check to ensure that they agree with each other. We found that although they were not perfect matches, they were close enough that we were comfortable with the data (slope close to 1 and $R^2$ also close to 1). They were not expected to be perfect matches because one is an indicator of average life expectancy that year while the other is an indicator of expected life expectancy at birth.
+
+```{r, fig.width=3.5, fig.height=3}
+# Merge WHO and WHR data by country
+whr.and.who.2011.clean = na.omit(merge(lifeData.2011, whr.2011, by = "Country"))
+
+# Check if Life Expectancy matches between WHO and WHR
+plot(whr.and.who.2011.clean$LifeExpectancy, whr.and.who.2011.clean$Healthy.life.expectancy.at.birth, xlab="WHO Life Expectancy", ylab="WHR Life Expectancy (At Birth)")
+summary(lm(LifeExpectancy~Healthy.life.expectancy.at.birth, data = whr.and.who.2011.clean))
+```
+\pagebreak
+### Determining Variable Transformations
+
+#### WHO Data
+
+We examined the WHO 2011 data separately from the merged WHO and WHR 2011 data so that we can get an idea of whether there is value added from including the emotional well-being indicators. Status was the only categorical variable we had, which we will use as a dummy variable (Developed or not). From a table of the Status variable, we find that the majority of the countries have a "Developing" status (85%), which is as we would expect.
+
+```{r}
+# Table of Status => mostly developing countries
+with(lifeData.2011, prop.table(table(Status))*100)
+
+# Our "clean, transformed" data frame 
+lifeData.df = data.frame(developed = (lifeData.2011$Status == "Developed"))
+```
+
+Continuing on to the numerical variables, we looked at the variables individually to determine what kinds of transformations are needed to be made to the predictor variables to result in more normally distributed residuals for fits. We first did a quick preliminary run using the powerTransform function to give us an idea of the types of transformations that may be good to perform, but analyzed each individually for different transformations before deciding on the best (See Appendix D). An example with Adult Mortality is shown below. The histogram of AdultMortality shows that it is right-skewed. If we consider a linear model based only on Adult Mortality, we find that there is a signifcant and high negative correlation between Adult Mortality and Life Expectancy. We therefore definitely want to keep this predictor in the model. We considered log and square root of the variable as potential transformations and in the end settled on square root, which resulted in pretty close to a normal distribution of the predictor variable, as can be observed from the histogram of the distribution as well as the normal qqplot being close to linear.
+
+```{r, fig.height=3}
+# AdultMortality
+par(mfrow = c(1,2))
+with(lifeData.2011,hist(AdultMortality,50))
+plot(lifeData.2011$AdultMortality, lifeData.2011$LifeExpectancy,
+     xlab="Adult Mortality", ylab="Life Expectancy")
+
+summary(lm(LifeExpectancy~AdultMortality, data=lifeData.2011)) # Significant
+```
+
+```{r, fig.height=6}
+par(mfrow = c(3,2))
+with(lifeData.2011,hist(AdultMortality,50))
+with(lifeData.2011,qqnorm(AdultMortality))
+with(lifeData.2011,qqline(AdultMortality,col="pink"))
+with(lifeData.2011,hist(log(AdultMortality),50))
+with(lifeData.2011,qqnorm(log(AdultMortality)))
+with(lifeData.2011,qqline(log(AdultMortality),col="pink"))
+with(lifeData.2011,hist(sqrt(AdultMortality),50))
+with(lifeData.2011,qqnorm(sqrt(AdultMortality)))
+with(lifeData.2011,qqline(sqrt(AdultMortality),col="pink"))
+# use sqrt
+```
+
+In the end, the transformations we decided on can be found in Table 1.
+
+\setcounter{table}{0}
+\begin{table}[]
+\centering
+\begin{tabular}{l|c|c}
+\textbf{Variable}           & \textbf{powerTransform} & \textbf{Final Decision} \\ \hline
+AdultMortality     & 0.72           & 0.5            \\
+InfantDeaths       & 0.14           & 0              \\
+Alcohol            & 0.5            & 0.5            \\
+PercentExpenditure & 0.5            & 0.5            \\
+HepB               & 3.94           & 4              \\
+Measles            & 0.08           & 0              \\
+BMI                & 1              & 1              \\
+UnderFiveDeaths    & 0.15           & 0              \\
+Polio              & 4.08           & 4              \\
+TotalExpenditure   & 1              & 1              \\
+Diphtheria         & 4.64           & 5              \\
+HIVAIDS            & -0.50          & -0.5           \\
+GDP                & 0.12           & 0              \\
+Population         & 0.07           & 0              \\
+Thin1019           & 0.13           & 0.15           \\
+Thin59             & 0.14           & 0.15           \\
+IncomeComposition  & 1              & 1              \\
+Schooling          & 1.48           & 1             
+\end{tabular}
+\caption{Table of transformation recommended by powerTransform and our final decisions on transformations.}
+\end{table}
+
+```{r, include=FALSE}
+# Transformations for continuous variables
+lifeData.df <- cbind(lifeData.df,data.frame(adult.mortality.sqrt=sqrt(lifeData.2011[,'AdultMortality'])))
+lifeData.df <- cbind(lifeData.df,data.frame(infant.deaths.log=log(lifeData.2011[,'InfantDeaths']+0.5)))
+lifeData.df <- cbind(lifeData.df,data.frame(under.five.deaths.log=log(lifeData.2011[,'UnderFiveDeaths']+0.5)))
+lifeData.df <- cbind(lifeData.df,data.frame(hivaids.1oversqrt=1/sqrt(lifeData.2011[,'HIVAIDS'])))
+lifeData.df <- cbind(lifeData.df,data.frame(measles.log=log(lifeData.2011[,'Measles']+0.5)))
+lifeData.df <- cbind(lifeData.df,data.frame(hepb.power4=(lifeData.2011[,'HepB'])^4))
+lifeData.df <- cbind(lifeData.df,data.frame(polio.power4=(lifeData.2011[,'Polio'])^4)) # ^4 per powertransform... not looking perfect
+lifeData.df <- cbind(lifeData.df,data.frame(diphtheria.power5=(lifeData.2011[,'Diphtheria'])^5)) # ^5 per powertransform... not looking perfect
+lifeData.df <- cbind(lifeData.df,data.frame(percent.expenditure.sqrt=sqrt(lifeData.2011[,'PercentExpenditure'])))
+lifeData.df <- cbind(lifeData.df,data.frame(total.expenditure=lifeData.2011[,'TotalExpenditure']))
+lifeData.df <- cbind(lifeData.df,data.frame(income.composition=lifeData.2011[,'IncomeComposition']))
+lifeData.df <- cbind(lifeData.df,data.frame(gdp.log=log(lifeData.2011[,'GDP'])))
+lifeData.df <- cbind(lifeData.df,data.frame(alcohol.sqrt=sqrt(lifeData.2011[,'Alcohol'])))
+lifeData.df <- cbind(lifeData.df,data.frame(bmi=lifeData.2011[,'BMI']))
+lifeData.df <- cbind(lifeData.df,data.frame(thin59.power0.15=(lifeData.2011[,'Thin59'])^(0.15)))
+lifeData.df <- cbind(lifeData.df,data.frame(thin1019.power0.15=(lifeData.2011[,'Thin1019'])^(0.15)))
+lifeData.df <- cbind(lifeData.df,data.frame(population.log=log(lifeData.2011[,'Population'])))
+lifeData.df <- cbind(lifeData.df,data.frame(schooling=(lifeData.2011[,'Schooling'])))
+```
+
+
+\pagebreak
+
+#### Principal Component Analysis
+
+To get an idea of potentially important predictors, we performed Principal Component Analysis on the explanatory variables. On the scaled data, the 1st PC explains about 40% of variance and the next two PCs explain roughly comparable amount of variance – 11%. Multiple attributes in the dataset contribute comparably to the loadings: "positive" measures such as income, schooling, bmi, gdp, polio vaccination are positively correlated and "negative" measures such as infant deaths are negatively correlated with the first principal component. The second principal component is positively correlated with hepb, diphtheria, polio, thin59, thin1019 and negatively correlated with measles, population, and developed, to name a few.
+
+```{r, fig.height=3.5, fig.width=4}
+# PCA on scaled data
+pcaRes <- prcomp(lifeData.df,scale=TRUE)
+
+par(mfrow = c(1,1))
+plot(pcaRes)
+biplot(pcaRes, scale=0)
+# print(pcaRes)
+# summary(pcaRes)
+
+std_dev <- pcaRes$sdev
+pr_var <- std_dev^2
+varExplained <- pr_var/sum(pr_var)
+# varExplained
+
+plot(varExplained, xlab = "Principal Component",
+             ylab = "Variance Explained",
+             type = "b")
+
+plot(cumsum(varExplained), xlab = "Principal Component",
+             ylab = "Cumulative Variance Explained",
+             type = "b")
+
+print("Ten largest by absolute value loadings, PC1:")
+print(pcaRes$rotation[order(abs(pcaRes$rotation[,1]),decreasing=TRUE)[1:10],1])
+
+print("Ten largest by absolute value loadings, PC2:")
+print(pcaRes$rotation[order(abs(pcaRes$rotation[,2]),decreasing=TRUE)[1:10],2])
+```
+
+#### WHO and WHR Data Combined
+
+We followed the exact same procedure as before to decide how to transform the predictor variables from the WHR (See Appendix E). In the end, we decided that the variables were okay as they were and did not end up transforming them.
+
+```{r, include=FALSE}
+# Transform WHO Data
+transformed.who = data.frame(life.expectancy = whr.and.who.2011.clean$LifeExpectancy, # WHO data
+                             developed = (whr.and.who.2011.clean$Status == "Developed"),
+                             adult.mortality.sqrt = sqrt(whr.and.who.2011.clean$AdultMortality),
+                             infant.deaths.shift1.log = log(whr.and.who.2011.clean$InfantDeaths+0.5),
+                             under.five.deaths.shift1.log = log(whr.and.who.2011.clean$UnderFiveDeaths+0.5),
+                             hivaids.1oversqrt = 1/sqrt(whr.and.who.2011.clean$HIVAIDS),
+                             measles.shift1.log = log(whr.and.who.2011.clean$Measles+0.5),
+                             hep.b.power4 = whr.and.who.2011.clean$HepB^4,
+                             polio.power4 = whr.and.who.2011.clean$Polio^4,
+                             diphtheria = whr.and.who.2011.clean$Diphtheria,
+                             percent.expenditure.sqrt = sqrt(whr.and.who.2011.clean$PercentExpenditure),
+                             total.expenditure = whr.and.who.2011.clean$TotalExpenditure,
+                             income.composition = whr.and.who.2011.clean$IncomeComposition,
+                             gdp.per.cap.log = log(whr.and.who.2011.clean$GDP),
+                             alcohol.sqrt = sqrt(whr.and.who.2011.clean$Alcohol),
+                             bmi = whr.and.who.2011.clean$BMI,
+                             thin.5.9.power0.15 = log(whr.and.who.2011.clean$Thin59),
+                             thin.10.19.power0.15 = log(whr.and.who.2011.clean$Thin1019),
+                             population.log = log(whr.and.who.2011.clean$Population),
+                             schooling = whr.and.who.2011.clean$Schooling)
+                                     
+# Transform WHR Data
+transformed.whr = data.frame(social.support = whr.and.who.2011.clean$Social.support,
+                             freedom.to.make.life.choices = whr.and.who.2011.clean$Freedom.to.make.life.choices,
+                             generosity = whr.and.who.2011.clean$Generosity,
+                             #generosity.log.shift.5 = log(whr.and.who.2011.clean$Generosity+.5),
+                             perceptions.of.corruption = whr.and.who.2011.clean$Perceptions.of.corruption, #!!!
+                             positive.affect = whr.and.who.2011.clean$Positive.affect,
+                             negative.affect = whr.and.who.2011.clean$Negative.affect,
+                             #negative.affect.log = log(whr.and.who.2011.clean$Negative.affect),
+                             democratic.quality = whr.and.who.2011.clean$Democratic.Quality,
+                             delivery.quality = whr.and.who.2011.clean$Delivery.Quality)
+
+# Combine the two dataframes
+transformed.who.and.whr = cbind(transformed.who, transformed.whr)
+```
+
+### Regression
+
+#### WHO Data
+
+Trying linear regression with all the transformed variables from the WHO data alone, several variables already start to jump out, particularly income composition and adult mortality, but after examining VIFs, we see that some variables need to be eliminated in order to resolve multicollinearity issues (some VIFs as high as 70-80). We eliminated variables one by one until we were satisfied with the VIFs, during which process we lost under.five.deaths, thin1019, and income.composition to end up with all VIFs under 10 (See Appendix F).
+
+```{r, include=FALSE}
+# Add Life Expectancy to clean and transformed dataframe
+lifeData.df = cbind(data.frame(life.expectancy=(lifeData.2011[,'LifeExpectancy'])),lifeData.df)
+
+# Make sure everything is in order
+head(lifeData.df)
+```
+
+```{r}
+# Linear regression with all transformed variables
+fit.2011 = lm(life.expectancy~.,data=lifeData.df)
+summary(fit.2011)
+
+# Examine VIFs
+vif(fit.2011)
+
+# Eliminate under.five.deaths, thin1019, and income.composition (see Appendix F)
+lifeDataFit.df = lifeData.df[,-c(5,13,18)]
+fit.2011 = lm(life.expectancy~.,data=lifeDataFit.df)
+summary(fit.2011)
+vif(fit.2011)
+```
+
+With the remaining variables, we performed forward and backward stepwise regression in order to eliminate insignificant variables, then further refined the model by eliminating variables one by one that were not statistically significant (below our $\alpha$ cut-off of 0.01). The final model consists of four predictors: adult.mortality, hivaids, alcohol, and schooling.
+
+```{r}
+# Forward and backward stepwise regression
+step <- stepAIC(fit.2011, direction="both", trace=0)
+# step$anova # Display results
+
+#summary(step)
+
+fit.final2=lm(life.expectancy ~ adult.mortality.sqrt + infant.deaths.log + 
+    hivaids.1oversqrt + hepb.power4 + gdp.log + alcohol.sqrt + schooling,
+    data = lifeDataFit.df)
+# summary(fit.final2)
+
+fit.final3=lm(life.expectancy ~ adult.mortality.sqrt + infant.deaths.log + 
+    hivaids.1oversqrt + gdp.log + alcohol.sqrt + schooling, data = lifeDataFit.df)
+# summary(fit.final3)
+
+fit.final4=lm(life.expectancy ~ adult.mortality.sqrt + infant.deaths.log + 
+    hivaids.1oversqrt + alcohol.sqrt + schooling, data = lifeDataFit.df)
+# summary(fit.final4)
+
+fit.final5=lm(life.expectancy ~ adult.mortality.sqrt + hivaids.1oversqrt +
+                alcohol.sqrt + schooling, data = lifeDataFit.df)
+
+# Checking modeling assumptions
+summary(fit.final5)
+ncvTest(fit.final5)
+shapiro.test(residuals(fit.final5))
+vif(fit.final5)
+```
+
+#### Checking Modeling Assumptions
+
+Multicolinearity: All our VIFs are under 10
+
+Homoscedasticity: p = .55>.05 so we fail to reject Ho: our errors have constant variance.
+
+Errors~N(0,sigma^2): p = .16>.05 so we fail to reject Ho: our errors are normally distributed.
+
+Independence: we specifically chose not to use data for multiple years to avoid problems with independence.
+
+Linearity: we did not observe any patterns in our residuals versus fitted diagnostic graph.
+
+
+With the diagnostic plots of the final fit, we demonstrate with visual indicators that the residuals of the fit are well-behaved. No outliers jump out, and there is no indication that we fit a line when we should fit a curve since the residuals vs. fitted and scale-location graphs looks to be fairly horizontal. The normal qqplot show that the residuals appear to be normally distributed since the standardized residuals fall close to a line when plotted against theoretical quanties. It's not perfect, with some points that fall below and above the line at the lower and upper quantiles, respectively, but overall it is quite good. Finally, examining the residuals vs. leverage graph, we see that no points are more than Cook's distance away. The residuals are all quite low, and the points with highest leverage have close to 0 residual.
+```{r}
+par(mfrow = c(2,2))
+plot(fit.final3)
+```
+
+#### WHO and WHR Data
+
+When we combined the WHO and WHR datasets, we went down from 130 countries to 103 countries due to missing data. Therefore, we first want to make sure we at least get a similar regression result with just the WHO predictors with the reduced number of countries in the combined data. Again, we eliminated variables to reduce VIFs below 10 and ended up removing similar variables: under.5.deaths, thin.5.9 (instead of thin.10.19), and income.composition (See Appendix G). We then performed foward and backward stepwise regression using stepAIC then manually eliminating variables one by one that did not have a p-value below $0.01$. 
+
+```{r}
+fit.whr.who.only.1 = lm(life.expectancy~.-under.five.deaths.shift1.log
+    -income.composition-thin.5.9.power0.15, data = transformed.who)
+#summary(fit.whr.who.only.1)
+#vif(fit.whr.who.only.1)
+
+fit.whr.who.only.2 = stepAIC(fit.whr.who.only.1, direction = "both", trace = 0)
+# summary(fit.whr.who.only.2)
+
+fit.whr.who.only.3 = update(fit.whr.who.only.2,.~.-gdp.per.cap.log )
+# summary(fit.whr.who.only.3)
+
+fit.whr.who.only.4 = update(fit.whr.who.only.3,.~.-polio.power4)
+# summary(fit.whr.who.only.4)
+
+fit.whr.who.only.5 = update(fit.whr.who.only.4,.~.-hep.b.power4)
+# summary(fit.whr.who.only.5)
+
+fit.whr.who.only.6 = update(fit.whr.who.only.5,.~.-total.expenditure)
+# summary(fit.whr.who.only.6)
+
+fit.whr.who.only.7 = update(fit.whr.who.only.6,.~.-infant.deaths.shift1.log)
+summary(fit.whr.who.only.7)
+
+ncvTest(fit.whr.who.only.7)
+shapiro.test(residuals(fit.whr.who.only.7))
+vif(fit.whr.who.only.7)
+```
+
+Overall, the results were similar to before, where four predictors remained at the end, three of which were the same (adult.mortality, hivaids, and schooling), but alcohol was replaced by thin.10.19. This is not too concerning since they likely measure similar attributes of general health in the country. Looking at the ncvTest, Shapiro-Wilk test, and diagnostic plots (as discussed above), we were satisfied our assumptions of linear, homoskedastic, independent, normally distributed residuals were met.
+
+```{r}
+par(mfrow = c(2,2))
+plot(fit.whr.who.only.7)
+```
+
+We then asked if there is a role happiness indicators play on life expectancy. We performed a partial F-test to see if any of the additional happiness indicators are needed to predict life expectancy. From the test, we obtained a p-value of 0.0018, so at least one of the happiness indicators seem to have an impact on life expectancy.
+
+Repeating the same procedure with all the predictors from both datasets (See Appendix H), we arrive at a final model consisting of 6 predictors using our full dataset: adult.mortality, infant.deaths, hivaids, positive.affect, negative.affect, and delivery.quality. adult.mortality and hivaids were two of the four variables we had previously, but infant.deaths was new and we see the appearance of 3 predictors from the WHR dataset.
+
+Looking at the ncvTest, Shapiro-Wilk test, and diagnostic plots, we were satisfied our assumptions of linear, homoskedastic, independent, normally distributed residuals were met.
+
+We also looked at BIC model probabilities of the Final WHO/WHR model vs. WHO Only model vs. WHO plus Full WHR model (containing all WHR predictors). The Final WHO/WHR Model has a BIC probability of ~100%, so we are satisfied that there is added value in adding emotional and social indicators of well-being into our model.
+
+```{r}
+# Partial F-test
+# Can we improve the final WHO-only model by adding any of the WHR hapiness variables?
+# Model from before
+fit.who.and.whr.reducedmodel = fit.whr.who.only.7
+
+# Fit the final WHO model plus the happiness indicators
+fit.who.and.whr.fullmodel = lm(life.expectancy ~ adult.mortality.sqrt + hivaids.1oversqrt + 
+    thin.10.19.power0.15 + schooling + social.support + freedom.to.make.life.choices + 
+    generosity + perceptions.of.corruption + positive.affect + negative.affect + 
+    democratic.quality + delivery.quality, data=transformed.who.and.whr)
+
+# Get the p-value of the partial F-test
+anova(fit.who.and.whr.fullmodel, fit.who.and.whr.reducedmodel)
+
+# Final fit starting with all predictors (See Appendix H)
+fit.who.and.whr.final = lm( life.expectancy ~ adult.mortality.sqrt + 
+                              infant.deaths.shift1.log + hivaids.1oversqrt + 
+                              positive.affect + negative.affect + delivery.quality,
+                            data = transformed.who.and.whr)
+summary(fit.who.and.whr.final)
+vif(fit.who.and.whr.final)
+ncvTest(fit.who.and.whr.final)
+shapiro.test(residuals(fit.who.and.whr.final))
+
+par(mfrow = c(2,2))
+plot(fit.who.and.whr.final)
+
+# BIC probabilities of models
+thebics=c(BIC(fit.who.and.whr.final),BIC(fit.who.and.whr.reducedmodel),BIC(fit.who.and.whr.fullmodel))
+eBIC <- exp(-0.5*(thebics-min(thebics)))
+modelprobs <- eBIC/sum(eBIC)
+names(modelprobs)=c("Final Model","WHO Only Model","WHO and Full WHR Model")
+modelprobs
+```
+
+\pagebreak
+
+# Appendices
+
+## Appendix A: WHO/UN Data Cleanup
+```{r AppendixA}
+# Load WHO data
+lifeData = read.csv("Life Expectancy Data.csv")
+
+# Remove rows with NA
+lifeData = na.omit(lifeData)
+
+# Reorder data so outcome (life expectancy) is first and grab Country, Year, and Status
+lifeData.new = cbind(LifeExpectancy=lifeData$Life.expectancy, lifeData[ , 1:3])
+
+# Group other data according to common themes
+lifeData.new = cbind(lifeData.new,
+                     AdultMortality=lifeData$Adult.Mortality, # Deaths
+                     InfantDeaths=lifeData$infant.deaths,
+                     UnderFiveDeaths=lifeData$under.five.deaths,
+                     HIVAIDS=lifeData$HIV.AIDS,
+                     Measles=lifeData$Measles, # Diseases
+                     HepB=lifeData$Hepatitis.B, # Vaccinations
+                     Polio=lifeData$Polio, Diphtheria=lifeData$Diphtheria,
+                     PercentExpenditure=lifeData$percentage.expenditure, # Economic Resources
+                     TotalExpenditure=lifeData$Total.expenditure,
+                     IncomeComposition=lifeData$Income.composition.of.resources,
+                     GDP=lifeData$GDP,
+                     Alcohol=lifeData$Alcohol, BMI=lifeData$BMI, # Health/Nutrition
+                     Thin59=lifeData$thinness.5.9.years,
+                     Thin1019=lifeData$thinness..1.19.years, 
+                     Population=lifeData$Population, # Other (population/schooling)
+                     Schooling=lifeData$Schooling)
+```
+
+## Appendix B: World Happiness Report Data Cleanup
+```{r}
+# Load WHR Data
+whr.df = read.csv("Table 2.1.csv") 
+
+# Look at structure of WHR Data
+str(whr.df)
+
+# Look at what years have the most data available
+table(whr.df$Year)
+
+# Consider only 2011 data
+whr.2011 = whr.df[whr.df$Year==2011,]
+
+# Examine which columns have a lot of missing data
+na_count = data.frame(sapply(whr.2011, function(y) sum(length(which(is.na(y))))))
+na_count
+
+# Take subset of data (remove columns)
+whr.2011 = subset(whr.2011, select = -c(Confidence.in.national.government, # Missing data
+                                        Most.people.can.be.trusted..Gallup,
+                                        Most.people.can.be.trusted..WVS.round.1981.1984,
+                                        Most.people.can.be.trusted..WVS.round.1989.1993,
+                                        Most.people.can.be.trusted..WVS.round.1994.1998,
+                                        Most.people.can.be.trusted..WVS.round.1999.2004,
+                                        Most.people.can.be.trusted..WVS.round.2005.2009,
+                                        Most.people.can.be.trusted..WVS.round.2010.2014,
+                                        
+                                        Year, # Only looking at 2011
+                                        WP5.Country, # Not a predictor.
+                                        Life.Ladder, # Linear combination of other predictors
+                                        Log.GDP.per.capita)) # GDP already in WHO data
+na_count = data.frame(sapply(whr.2011, function(y) sum(length(which(is.na(y))))))
+na_count
+
+# Take subset of data (remove rows)
+whr.2011.clean = whr.2011[!is.na(whr.2011$Perceptions.of.corruption),]
+na_count = data.frame(sapply(whr.2011.clean, function(y) sum(length(which(is.na(y))))))
+na_count
+```
+
+## Appendix C: WHO/UN Data for 2011 Cleanup
+```{r}
+# Load 2011 data
+lifeData.2011 = read.csv("Life Expectancy Data 2011.csv")
+
+# Remove rows with NA
+lifeData.2011 = na.omit(lifeData.2011)
+
+# Reorder data so outcome (life expectancy) is first and grab Country, Year, and Status
+lifeData.new = cbind(LifeExpectancy=lifeData.2011$Life.expectancy, lifeData.2011[ , 1:3])
+
+# Group other data according to common themes
+lifeData.new = cbind(lifeData.new,
+                     AdultMortality=lifeData.2011$Adult.Mortality, # Deaths
+                     InfantDeaths=lifeData.2011$infant.deaths,
+                     UnderFiveDeaths=lifeData.2011$under.five.deaths,
+                     HIVAIDS=lifeData.2011$HIV.AIDS,
+                     Measles=lifeData.2011$Measles, # Diseases
+                     HepB=lifeData.2011$Hepatitis.B, # Vaccinations
+                     Polio=lifeData.2011$Polio, Diphtheria=lifeData.2011$Diphtheria,
+                     PercentExpenditure=lifeData.2011$percentage.expenditure, # Economic Resources
+                     TotalExpenditure=lifeData.2011$Total.expenditure,
+                     IncomeComposition=lifeData.2011$Income.composition.of.resources,
+                     GDP=lifeData.2011$GDP,
+                     Alcohol=lifeData.2011$Alcohol, BMI=lifeData.2011$BMI, # Health/Nutrition
+                     Thin59=lifeData.2011$thinness.5.9.years,
+                     Thin1019=lifeData.2011$thinness..1.19.years, 
+                     Population=lifeData.2011$Population, # Other (population/schooling)
+                     Schooling=lifeData.2011$Schooling)
+lifeData.2011 = lifeData.new
+```
+
+## Appendix D: Transformations for WHO Data
+```{r}
+###########################################
+# Using powerTransform
+
+# Dataframe for using powerTransform to determine good transformations for predictors
+lifeData2011.tf = lifeData.2011
+
+# Make 0's 1e-12 (data must be strictly positive)
+lifeData2011.tf[which(lifeData2011.tf==0, arr.ind = TRUE)] = 1e-12
+
+# Use powerTransform to give idea of potential transformations
+summary(powerTransform(with(lifeData2011.tf, cbind(AdultMortality, InfantDeaths,
+    Alcohol, PercentExpenditure, HepB, Measles, BMI, UnderFiveDeaths, Polio,
+    TotalExpenditure, Diphtheria, HIVAIDS, GDP, Population, Thin1019, Thin59,
+    IncomeComposition, Schooling))))
+
+###########################################
+# Status
+# Our "clean, transformed" data frame 
+lifeData.df = data.frame(developed = (lifeData.2011$Status == "Developed")) # Dummy variable
+
+###########################################
+# AdultMortality
+with(lifeData.2011,hist(AdultMortality,50))
+plot(lifeData.2011$AdultMortality,lifeData.2011$LifeExpectancy)
+
+summary(lm(LifeExpectancy~AdultMortality,data=lifeData.2011))
+# significant
+
+par(mfrow = c(3,2))
+with(lifeData.2011,hist(AdultMortality,50))
+with(lifeData.2011,qqnorm(AdultMortality))
+with(lifeData.2011,qqline(AdultMortality,col="pink"))
+with(lifeData.2011,hist(log(AdultMortality),50))
+with(lifeData.2011,qqnorm(log(AdultMortality)))
+with(lifeData.2011,qqline(log(AdultMortality),col="pink"))
+with(lifeData.2011,hist(sqrt(AdultMortality),50))
+with(lifeData.2011,qqnorm(sqrt(AdultMortality)))
+with(lifeData.2011,qqline(sqrt(AdultMortality),col="pink"))
+# use sqrt
+
+lifeData.df <- cbind(lifeData.df,data.frame(adult.mortality.sqrt=sqrt(lifeData.2011[,'AdultMortality'])))
+
+###########################################
+# InfantDeaths
+
+with(lifeData.2011,hist(InfantDeaths,50))
+plot(lifeData.2011$InfantDeaths,lifeData.2011$LifeExpectancy)
+# very skewed
+
+summary(lm(LifeExpectancy~InfantDeaths,data=lifeData.2011))
+# significant
+
+par(mfrow = c(3,2))
+with(lifeData.2011,hist(InfantDeaths,50))
+with(lifeData.2011,qqnorm(InfantDeaths))
+with(lifeData.2011,qqline(InfantDeaths,col="pink"))
+with(lifeData.2011,hist(log(InfantDeaths+0.5),50))
+with(lifeData.2011,qqnorm(log(InfantDeaths+0.5)))
+with(lifeData.2011,qqline(log(InfantDeaths+0.5),col="pink"))
+with(lifeData.2011,hist(sqrt(InfantDeaths),50))
+with(lifeData.2011,qqnorm(sqrt(InfantDeaths)))
+with(lifeData.2011,qqline(sqrt(InfantDeaths),col="pink"))
+# not sure but log seems to help, kind of confirms powertransform. Need to eliminate zeroes -- add 0.5 (min value/2)
+
+#boxTidwell(lifeData.2011$LifeExpectancy~lifeData.2011$InfantDeaths+0.5,other.x=~lifeData.2011$AdultMortality, lifeData.2011$Alcohol, lifeData.2011$PercentExpenditure, lifeData.2011$HepB, lifeData.2011$Measles, lifeData.2011$BMI, lifeData.2011$UnderFiveDeaths, lifeData.2011$Polio, lifeData.2011$TotalExpenditure, lifeData.2011$Diphtheria, lifeData.2011$HIVAIDS, lifeData.2011$GDP, lifeData.2011$Population, lifeData.2011$Thin1019, lifeData.2011$Thin59, lifeData.2011$IncomeComposition, lifeData.2011$Schooling)
+
+#fit=lm(LifeExpectancy~InfantDeaths,data=lifeData.2011)
+#boxcox(fit)
+
+#fit=lm(LifeExpectancy~log(InfantDeaths+0.5),data=lifeData.2011)
+#boxcox(fit)
+
+# maybe come back later if there is time
+lifeData.df <- cbind(lifeData.df,data.frame(infant.deaths.log=log(lifeData.2011[,'InfantDeaths']+0.5)))
+
+
+###########################################
+# UnderFiveDeaths
+
+with(lifeData.2011,hist(UnderFiveDeaths,50))
+plot(lifeData.2011$LifeExpectancy,lifeData.2011$UnderFiveDeaths)
+# very scewed
+
+summary(lm(LifeExpectancy~UnderFiveDeaths,data=lifeData.2011))
+# significant
+
+# bunch of zeroes, let's see how many
+with(lifeData.2011,sum(UnderFiveDeaths==0)/length(UnderFiveDeaths)*100) # 22%
+with(subset(lifeData.2011,UnderFiveDeaths!=0),hist(UnderFiveDeaths,50)) #and the pesky tail again
+with(subset(lifeData.2011,UnderFiveDeaths!=0),hist(log(UnderFiveDeaths),50)) 
+# OK, let's just log it
+
+par(mfrow = c(3,2))
+with(lifeData.2011,hist(UnderFiveDeaths,50))
+with(lifeData.2011,qqnorm(UnderFiveDeaths))
+with(lifeData.2011,qqline(UnderFiveDeaths,col="pink"))
+with(lifeData.2011,hist(log(UnderFiveDeaths+0.5),50))
+with(lifeData.2011,qqnorm(log(UnderFiveDeaths+0.5)))
+with(lifeData.2011,qqline(log(UnderFiveDeaths+0.5),col="pink"))
+with(lifeData.2011,hist(sqrt(UnderFiveDeaths),50))
+with(lifeData.2011,qqnorm(sqrt(UnderFiveDeaths)))
+with(lifeData.2011,qqline(sqrt(UnderFiveDeaths),col="pink"))
+# not sure but log seems to help, kind of confirms powertransform. Need to eliminate zeroes -- add 0.5
+
+# maybe come back later if there is time
+lifeData.df <- cbind(lifeData.df,data.frame(under.five.deaths.log=log(lifeData.2011[,'UnderFiveDeaths']+0.5)))
+
+
+###########################################
+# HIVAIDS
+
+with(lifeData.2011,hist(HIVAIDS,50))
+plot(lifeData.2011$LifeExpectancy,lifeData.2011$HIVAIDS)
+# very scewed
+
+summary(lm(LifeExpectancy~HIVAIDS,data=lifeData.2011))
+# significant
+
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(HIVAIDS,50))
+with(lifeData.2011,qqnorm(HIVAIDS))
+with(lifeData.2011,qqline(HIVAIDS,col="pink"))
+with(lifeData.2011,hist(log(HIVAIDS+0.5),50))
+with(lifeData.2011,qqnorm(log(HIVAIDS+0.5)))
+with(lifeData.2011,qqline(log(HIVAIDS+0.5),col="pink"))
+with(lifeData.2011,hist(sqrt(HIVAIDS),50))
+with(lifeData.2011,qqnorm(sqrt(HIVAIDS)))
+with(lifeData.2011,qqline(sqrt(HIVAIDS),col="pink"))
+with(lifeData.2011,hist(1/sqrt(HIVAIDS),50))
+with(lifeData.2011,qqnorm(1/sqrt(HIVAIDS)))
+with(lifeData.2011,qqline(1/sqrt(HIVAIDS),col="pink"))
+# 1/sqrt per powertransform... not looking perfect
+
+# use 1/sqrt
+lifeData.df <- cbind(lifeData.df,data.frame(hivaids.1oversqrt=1/sqrt(lifeData.2011[,'HIVAIDS'])))
+
+
+###########################################
+# Measles
+
+with(lifeData.2011,hist(Measles,50))
+plot(lifeData.2011$LifeExpectancy,lifeData.2011$Measles)
+# very scewed
+
+summary(lm(LifeExpectancy~Measles,data=lifeData.2011))
+# not significant, skip it
+
+par(mfrow = c(3,2))
+with(lifeData.2011,hist(Measles,50))
+with(lifeData.2011,qqnorm(Measles))
+with(lifeData.2011,qqline(Measles,col="pink"))
+with(lifeData.2011,hist(log(Measles+0.5),50))
+with(lifeData.2011,qqnorm(log(Measles+0.5)))
+with(lifeData.2011,qqline(log(Measles+0.5),col="pink"))
+with(lifeData.2011,hist(sqrt(Measles),50))
+with(lifeData.2011,qqnorm(sqrt(Measles)))
+with(lifeData.2011,qqline(sqrt(Measles),col="pink"))
+# with(lifeData.2011,hist(1/sqrt(Measles),50))
+# with(lifeData.2011,qqnorm(1/sqrt(Measles)))
+# with(lifeData.2011,qqline(1/sqrt(Measles),col="pink"))
+# log it if need to add it back in
+
+# use log
+# lifeData.df <- cbind(lifeData.df,data.frame(measles=log(lifeData.2011[,'Measles']+0.5)))
+
+
+###########################################
+# HepB
+
+with(lifeData.2011,hist(HepB,50))
+plot(lifeData.2011$HepB,lifeData.2011$LifeExpectancy)
+# skewed
+
+summary(lm(LifeExpectancy~HepB,data=lifeData.2011))
+# not significant
+
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(HepB,50))
+with(lifeData.2011,qqnorm(HepB))
+with(lifeData.2011,qqline(HepB,col="pink"))
+with(lifeData.2011,hist(log(HepB+0.5),50))
+with(lifeData.2011,qqnorm(log(HepB+0.5)))
+with(lifeData.2011,qqline(log(HepB+0.5),col="pink"))
+with(lifeData.2011,hist(sqrt(HepB),50))
+with(lifeData.2011,qqnorm(sqrt(HepB)))
+with(lifeData.2011,qqline(sqrt(HepB),col="pink"))
+with(lifeData.2011,hist(1/sqrt(HepB),50))
+with(lifeData.2011,qqnorm(1/sqrt(HepB)))
+with(lifeData.2011,qqline(1/sqrt(HepB),col="pink"))
+with(lifeData.2011,hist(HepB^4,50))
+with(lifeData.2011,qqnorm(HepB^4))
+with(lifeData.2011,qqline(HepB^4,col="pink"))
+# ^4 per powertransform... not looking perfect
+
+# use ^4 
+lifeData.df <- cbind(lifeData.df,data.frame(hepb.power4=(lifeData.2011[,'HepB'])^4))
+
+
+###########################################
+# Polio
+
+with(lifeData.2011,hist(Polio,50))
+plot(lifeData.2011$Polio,lifeData.2011$LifeExpectancy)
+# skewed
+
+summary(lm(LifeExpectancy~Polio,data=lifeData.2011))
+# significant
+
+# powertransform says ^4
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(Polio,50))
+with(lifeData.2011,qqnorm(Polio))
+with(lifeData.2011,qqline(Polio,col="pink"))
+with(lifeData.2011,hist(log(Polio+0.5),50))
+with(lifeData.2011,qqnorm(log(Polio+0.5)))
+with(lifeData.2011,qqline(log(Polio+0.5),col="pink"))
+with(lifeData.2011,hist(sqrt(Polio),50))
+with(lifeData.2011,qqnorm(sqrt(Polio)))
+with(lifeData.2011,qqline(sqrt(Polio),col="pink"))
+with(lifeData.2011,hist(1/sqrt(Polio),50))
+with(lifeData.2011,qqnorm(1/sqrt(Polio)))
+with(lifeData.2011,qqline(1/sqrt(Polio),col="pink"))
+with(lifeData.2011,hist(Polio^5,50))
+with(lifeData.2011,qqnorm(Polio^5))
+with(lifeData.2011,qqline(Polio^5,col="pink"))
+# ^4 per powertransform... not looking perfect
+
+# use ^4
+lifeData.df <- cbind(lifeData.df,data.frame(polio.power4=(lifeData.2011[,'Polio'])^4))
+
+
+###########################################
+# Diphtheria
+
+with(lifeData.2011,hist(Diphtheria,50))
+plot(lifeData.2011$Diphtheria,lifeData.2011$LifeExpectancy)
+# skewed
+
+summary(lm(LifeExpectancy~Diphtheria,data=lifeData.2011))
+# significant
+
+# powertransform says ^5
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(Diphtheria,50))
+with(lifeData.2011,qqnorm(Diphtheria))
+with(lifeData.2011,qqline(Diphtheria,col="pink"))
+with(lifeData.2011,hist(log(Diphtheria+0.5),50))
+with(lifeData.2011,qqnorm(log(Diphtheria+0.5)))
+with(lifeData.2011,qqline(log(Diphtheria+0.5),col="pink"))
+with(lifeData.2011,hist(sqrt(Diphtheria),50))
+with(lifeData.2011,qqnorm(sqrt(Diphtheria)))
+with(lifeData.2011,qqline(sqrt(Diphtheria),col="pink"))
+with(lifeData.2011,hist(1/sqrt(Diphtheria),50))
+with(lifeData.2011,qqnorm(1/sqrt(Diphtheria)))
+with(lifeData.2011,qqline(1/sqrt(Diphtheria),col="pink"))
+with(lifeData.2011,hist(Diphtheria^5,50))
+with(lifeData.2011,qqnorm(Diphtheria^5))
+with(lifeData.2011,qqline(Diphtheria^5,col="pink"))
+# ^5 per powertransform... not looking perfect
+
+# use ^5
+lifeData.df <- cbind(lifeData.df,data.frame(diphtheria.power5=(lifeData.2011[,'Diphtheria'])^5))
+
+
+###########################################
+# PercentExpenditure
+
+with(lifeData.2011,hist(PercentExpenditure,50))
+plot(lifeData.2011$PercentExpenditure,lifeData.2011$LifeExpectancy)
+# skewed
+
+summary(lm(LifeExpectancy~PercentExpenditure,data=lifeData.2011))
+# significant
+
+# powertransform says sqrt
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(PercentExpenditure,50))
+with(lifeData.2011,qqnorm(PercentExpenditure))
+with(lifeData.2011,qqline(PercentExpenditure,col="pink"))
+with(lifeData.2011,hist(log(PercentExpenditure),50))
+with(lifeData.2011,qqnorm(log(PercentExpenditure)))
+with(lifeData.2011,qqline(log(PercentExpenditure),col="pink"))
+with(lifeData.2011,hist(sqrt(PercentExpenditure),50))
+with(lifeData.2011,qqnorm(sqrt(PercentExpenditure)))
+with(lifeData.2011,qqline(sqrt(PercentExpenditure),col="pink"))
+with(lifeData.2011,hist(1/sqrt(PercentExpenditure),50))
+with(lifeData.2011,qqnorm(1/sqrt(PercentExpenditure)))
+with(lifeData.2011,qqline(1/sqrt(PercentExpenditure),col="pink"))
+
+# use sqrt
+lifeData.df <- cbind(lifeData.df,data.frame(percent.expenditure.sqrt=sqrt(lifeData.2011[,'PercentExpenditure'])))
+
+
+###########################################
+# TotalExpenditure
+
+# no zeroes
+
+with(lifeData.2011,hist(TotalExpenditure,50))
+plot(lifeData.2011$LifeExpectancy,lifeData.2011$TotalExpenditure)
+# looks good
+
+summary(lm(LifeExpectancy~TotalExpenditure,data=lifeData.2011))
+# significant
+
+# powertransform as is
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(TotalExpenditure,50))
+with(lifeData.2011,qqnorm(TotalExpenditure))
+with(lifeData.2011,qqline(TotalExpenditure,col="pink"))
+with(lifeData.2011,hist(log(TotalExpenditure),50))
+with(lifeData.2011,qqnorm(log(TotalExpenditure)))
+with(lifeData.2011,qqline(log(TotalExpenditure),col="pink"))
+with(lifeData.2011,hist(sqrt(TotalExpenditure),50))
+with(lifeData.2011,qqnorm(sqrt(TotalExpenditure)))
+with(lifeData.2011,qqline(sqrt(TotalExpenditure),col="pink"))
+with(lifeData.2011,hist(1/sqrt(TotalExpenditure),50))
+with(lifeData.2011,qqnorm(1/sqrt(TotalExpenditure)))
+with(lifeData.2011,qqline(1/sqrt(TotalExpenditure),col="pink"))
+
+# use as is
+lifeData.df <- cbind(lifeData.df,data.frame(total.expenditure=lifeData.2011[,'TotalExpenditure']))
+
+
+###########################################
+# IncomeComposition
+
+# no zeroes
+
+with(lifeData.2011,hist(IncomeComposition,50))
+plot(lifeData.2011$IncomeComposition,lifeData.2011$LifeExpectancy)
+# wow
+
+summary(lm(LifeExpectancy~IncomeComposition,data=lifeData.2011))
+# significant
+
+# powertransform says as is
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(IncomeComposition,50))
+with(lifeData.2011,qqnorm(IncomeComposition))
+with(lifeData.2011,qqline(IncomeComposition,col="pink"))
+with(lifeData.2011,hist(log(IncomeComposition),50))
+with(lifeData.2011,qqnorm(log(IncomeComposition)))
+with(lifeData.2011,qqline(log(IncomeComposition),col="pink"))
+with(lifeData.2011,hist(sqrt(IncomeComposition),50))
+with(lifeData.2011,qqnorm(sqrt(IncomeComposition)))
+with(lifeData.2011,qqline(sqrt(IncomeComposition),col="pink"))
+with(lifeData.2011,hist(IncomeComposition^2,50))
+with(lifeData.2011,qqnorm(IncomeComposition^2))
+with(lifeData.2011,qqline(IncomeComposition^2,col="pink"))
+# hmm
+
+plot(lifeData.2011$IncomeComposition,lifeData.2011$LifeExpectancy)
+plot(lifeData.2011$IncomeComposition^2,lifeData.2011$LifeExpectancy)
+
+
+# use as is
+lifeData.df <- cbind(lifeData.df,data.frame(income.composition.power2=lifeData.2011[,'IncomeComposition']))
+
+
+###########################################
+# GDP
+
+# no zeroes
+
+with(lifeData.2011,hist(GDP,50))
+plot(lifeData.2011$GDP,lifeData.2011$LifeExpectancy)
+# skewed
+
+summary(lm(LifeExpectancy~GDP,data=lifeData.2011))
+# significant
+
+# powertransform says log
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(GDP,50))
+with(lifeData.2011,qqnorm(GDP))
+with(lifeData.2011,qqline(GDP,col="pink"))
+with(lifeData.2011,hist(log(GDP),50))
+with(lifeData.2011,qqnorm(log(GDP)))
+with(lifeData.2011,qqline(log(GDP),col="pink"))
+with(lifeData.2011,hist(sqrt(GDP),50))
+with(lifeData.2011,qqnorm(sqrt(GDP)))
+with(lifeData.2011,qqline(sqrt(GDP),col="pink"))
+with(lifeData.2011,hist(1/sqrt(GDP),50))
+with(lifeData.2011,qqnorm(1/sqrt(GDP)))
+with(lifeData.2011,qqline(1/sqrt(GDP),col="pink"))
+# clearly log
+
+# use log
+lifeData.df <- cbind(lifeData.df,data.frame(gdp.log=log(lifeData.2011[,'GDP'])))
+
+
+###########################################
+# Alcohol
+
+#  no zeroes
+
+with(lifeData.2011,hist(Alcohol,50))
+plot(lifeData.2011$Alcohol,lifeData.2011$LifeExpectancy)
+# skewed
+
+summary(lm(LifeExpectancy~Alcohol,data=lifeData.2011))
+# significant
+
+# powertransform says sqrt
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(Alcohol,50))
+with(lifeData.2011,qqnorm(Alcohol))
+with(lifeData.2011,qqline(Alcohol,col="pink"))
+with(lifeData.2011,hist(log(Alcohol),50))
+with(lifeData.2011,qqnorm(log(Alcohol)))
+with(lifeData.2011,qqline(log(Alcohol),col="pink"))
+with(lifeData.2011,hist(sqrt(Alcohol),50))
+with(lifeData.2011,qqnorm(sqrt(Alcohol)))
+with(lifeData.2011,qqline(sqrt(Alcohol),col="pink"))
+with(lifeData.2011,hist(1/sqrt(Alcohol),50))
+with(lifeData.2011,qqnorm(1/sqrt(Alcohol)))
+with(lifeData.2011,qqline(1/sqrt(Alcohol),col="pink"))
+# sqrt
+
+# use sqrt
+lifeData.df <- cbind(lifeData.df,data.frame(alcohol.sqrt=sqrt(lifeData.2011[,'Alcohol'])))
+
+
+###########################################
+# BMI
+
+#  no zeroes
+
+with(lifeData.2011,hist(BMI,50))
+plot(lifeData.2011$BMI,lifeData.2011$LifeExpectancy)
+# ok
+
+summary(lm(LifeExpectancy~BMI,data=lifeData.2011))
+# significant
+
+# powertransform says no transform
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(BMI,50))
+with(lifeData.2011,qqnorm(BMI))
+with(lifeData.2011,qqline(BMI,col="pink"))
+with(lifeData.2011,hist(log(BMI),50))
+with(lifeData.2011,qqnorm(log(BMI)))
+with(lifeData.2011,qqline(log(BMI),col="pink"))
+with(lifeData.2011,hist(sqrt(BMI),50))
+with(lifeData.2011,qqnorm(sqrt(BMI)))
+with(lifeData.2011,qqline(sqrt(BMI),col="pink"))
+with(lifeData.2011,hist(1/sqrt(BMI),50))
+with(lifeData.2011,qqnorm(1/sqrt(BMI)))
+with(lifeData.2011,qqline(1/sqrt(BMI),col="pink"))
+# not looking too good but no transform
+
+# no transform
+lifeData.df <- cbind(lifeData.df,data.frame(bmi=lifeData.2011[,'BMI']))
+
+
+###########################################
+# Thin59
+
+#  no zeroes
+
+with(lifeData.2011,hist(Thin59,50))
+plot(lifeData.2011$Thin59,lifeData.2011$LifeExpectancy)
+# skewed
+
+summary(lm(LifeExpectancy~Thin59,data=lifeData.2011))
+# significant
+
+# powertransform says 0.14
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(Thin59,50))
+with(lifeData.2011,qqnorm(Thin59))
+with(lifeData.2011,qqline(Thin59,col="pink"))
+with(lifeData.2011,hist(log(Thin59),50))
+with(lifeData.2011,qqnorm(log(Thin59)))
+with(lifeData.2011,qqline(log(Thin59),col="pink"))
+with(lifeData.2011,hist(sqrt(Thin59),50))
+with(lifeData.2011,qqnorm(sqrt(Thin59)))
+with(lifeData.2011,qqline(sqrt(Thin59),col="pink"))
+with(lifeData.2011,hist(1/sqrt(Thin59),50))
+with(lifeData.2011,qqnorm(1/sqrt(Thin59)))
+with(lifeData.2011,qqline(1/sqrt(Thin59),col="pink"))
+# not looking ok
+
+with(lifeData.2011,hist((Thin59)^(0.15),50))
+with(lifeData.2011,qqnorm((Thin59)^(0.15)))
+with(lifeData.2011,qqline((Thin59)^(0.15),col="pink"))
+# ok, use ^(0.15)
+
+lifeData.df <- cbind(lifeData.df,data.frame(thin59.power0.15=(lifeData.2011[,'Thin59'])^(0.15)))
+
+###########################################
+# Thin1019
+
+#  no zeroes
+
+with(lifeData.2011,hist(Thin1019,50))
+plot(lifeData.2011$Thin1019,lifeData.2011$LifeExpectancy)
+# skewed
+
+summary(lm(LifeExpectancy~Thin1019,data=lifeData.2011))
+# significant
+
+# powertransform says ^0.13
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(Thin1019,50))
+with(lifeData.2011,qqnorm(Thin1019))
+with(lifeData.2011,qqline(Thin1019,col="pink"))
+with(lifeData.2011,hist(log(Thin1019),50))
+with(lifeData.2011,qqnorm(log(Thin1019)))
+with(lifeData.2011,qqline(log(Thin1019),col="pink"))
+with(lifeData.2011,hist(sqrt(Thin1019),50))
+with(lifeData.2011,qqnorm(sqrt(Thin1019)))
+with(lifeData.2011,qqline(sqrt(Thin1019),col="pink"))
+with(lifeData.2011,hist(1/sqrt(Thin1019),50))
+with(lifeData.2011,qqnorm(1/sqrt(Thin1019)))
+with(lifeData.2011,qqline(1/sqrt(Thin1019),col="pink"))
+with(lifeData.2011,hist((Thin1019)^(0.15),50))
+with(lifeData.2011,qqnorm((Thin1019)^(0.15)))
+with(lifeData.2011,qqline((Thin1019)^(0.15),col="pink"))
+
+# use ^0.15
+lifeData.df <- cbind(lifeData.df,data.frame(thin1019.power0.15=(lifeData.2011[,'Thin1019'])^(0.15)))
+
+
+###########################################
+# Population
+
+#  no zeroes
+
+with(lifeData.2011,hist(Population,50))
+plot(lifeData.2011$Population,lifeData.2011$LifeExpectancy)
+# skewed
+
+summary(lm(LifeExpectancy~Population,data=lifeData.2011))
+
+# powertransform says log
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(Population,50))
+with(lifeData.2011,qqnorm(Population))
+with(lifeData.2011,qqline(Population,col="pink"))
+with(lifeData.2011,hist(log(Population),50))
+with(lifeData.2011,qqnorm(log(Population)))
+with(lifeData.2011,qqline(log(Population),col="pink"))
+
+# log it
+lifeData.df <- cbind(lifeData.df,data.frame(population.log=log(lifeData.2011[,'Population'])))
+
+###########################################
+# Schooling
+
+#  no zeroes
+
+with(lifeData.2011,hist(Schooling,50))
+plot(lifeData.2011$Schooling,lifeData.2011$LifeExpectancy)
+# skewed
+
+summary(lm(LifeExpectancy~Schooling,data=lifeData.2011))
+# significant
+
+# powertransform says ^1.5
+par(mfrow = c(2,2))
+with(lifeData.2011,hist(Schooling,50))
+with(lifeData.2011,qqnorm(Schooling))
+with(lifeData.2011,qqline(Schooling,col="pink"))
+with(lifeData.2011,hist(log(Schooling),50))
+with(lifeData.2011,qqnorm(log(Schooling)))
+with(lifeData.2011,qqline(log(Schooling),col="pink"))
+with(lifeData.2011,hist(sqrt(Schooling),50))
+with(lifeData.2011,qqnorm(sqrt(Schooling)))
+with(lifeData.2011,qqline(sqrt(Schooling),col="pink"))
+with(lifeData.2011,hist(1/sqrt(Schooling),50))
+with(lifeData.2011,qqnorm(1/sqrt(Schooling)))
+with(lifeData.2011,qqline(1/sqrt(Schooling),col="pink"))
+with(lifeData.2011,hist((Schooling)^(1.5),50))
+with(lifeData.2011,qqnorm((Schooling)^(1.5)))
+with(lifeData.2011,qqline((Schooling)^(1.5),col="pink"))
+# prefer not to transform -- looks ok
+
+# no transform
+lifeData.df <- cbind(lifeData.df,data.frame(schooling=(lifeData.2011[,'Schooling'])))
+```
+
+## Appendix E: Transformations for WHR Data
+```{r}
+## Transforming WHR.
+# Social.support                  
+# Healthy.life.expectancy.at.birth
+# Freedom.to.make.life.choices    
+# Generosity                      
+# Perceptions.of.corruption       
+# Positive.affect    
+# Negative.affect  
+# Democratic.Quality
+# Delivery.Quality
+
+col = whr.and.who.2011.clean$Social.support+.5
+summary(powerTransform(col))
+par(mfrow = c(2,2))
+with(whr.and.who.2011.clean,hist(col,50))
+with(whr.and.who.2011.clean,qqnorm(col))
+with(whr.and.who.2011.clean,qqline(col,col="pink"))
+with(whr.and.who.2011.clean,hist(log(col),50))
+with(whr.and.who.2011.clean,qqnorm(log(col)))
+with(whr.and.who.2011.clean,qqline(log(col),col="pink"))
+with(whr.and.who.2011.clean,hist(sqrt(col),50))
+with(whr.and.who.2011.clean,qqnorm(sqrt(col)))
+with(whr.and.who.2011.clean,qqline(sqrt(col),col="pink"))
+with(whr.and.who.2011.clean,hist(1/sqrt(col),50))
+with(whr.and.who.2011.clean,qqnorm(1/sqrt(col)))
+with(whr.and.who.2011.clean,qqline(1/sqrt(col),col="pink"))
+with(whr.and.who.2011.clean,hist((col)^(1.5),50))
+with(whr.and.who.2011.clean,qqnorm((col)^(1.5)))
+with(whr.and.who.2011.clean,qqline((col)^(1.5),col="pink"))
+with(whr.and.who.2011.clean,hist((col)^(2),50))
+with(whr.and.who.2011.clean,qqnorm((col)^(2)))
+with(whr.and.who.2011.clean,qqline((col)^(2),col="pink"))
+
+#boxplot(whr.and.who.2011.clean$Measles)
+```
+
+## Appendix F: Eliminating Variables with VIFs for WHO Data
+```{r}
+# Add Life Expectancy to clean and transformed dataframe
+lifeData.df = cbind(data.frame(life.expectancy=(lifeData.2011[,'LifeExpectancy'])),lifeData.df)
+
+# Linear regression with all transformed variables
+fit.2011 = lm(life.expectancy~.,data=lifeData.df)
+summary(fit.2011) # Nothing significant
+
+# Examine VIFs
+vif(fit.2011)
+
+# Big multicollinearity issues, let's eliminate under.five.deaths
+lifeDataFit.df = lifeData.df[,-5]
+fit.2011 = lm(life.expectancy~.,data=lifeDataFit.df)
+summary(fit.2011)
+vif(fit.2011)
+
+# Still multicollinearity issues, let's eliminate thin1019
+lifeDataFit.df = lifeDataFit.df[,-17]
+fit.2011 = lm(life.expectancy~.,data=lifeDataFit.df)
+summary(fit.2011)
+vif(fit.2011)
+
+# Still multicollinearity issues, let's eliminate income.composition
+lifeDataFit.df = lifeDataFit.df[,-12]
+fit.2011 = lm(life.expectancy~.,data=lifeDataFit.df)
+summary(fit.2011)
+vif(fit.2011)
+```
+
+## Appendix G: Eliminating Variables with VIFs for WHO Predictors in Combined Data
+```{r}
+# Fit using only WHO predictors
+fit.whr.who.only.1 = lm(life.expectancy~., data = transformed.who)
+summary(fit.whr.who.only.1)
+
+# Examine VIFs
+vif(fit.whr.who.only.1)
+
+# Big multicollinearity issues, let's eliminate under.five.deaths
+fit.whr.who.only.2 = lm(life.expectancy~.-under.five.deaths.shift1.log, data = transformed.who)
+summary(fit.whr.who.only.2)
+vif(fit.whr.who.only.2)
+
+# Still multicollinearity issues, let's eliminate income.composition
+fit.whr.who.only.3 = lm(life.expectancy~.-under.five.deaths.shift1.log-income.composition, data = transformed.who)
+summary(fit.whr.who.only.3)
+vif(fit.whr.who.only.3)
+
+# Still multicollinearity issues, let's eliminate thin.5.9
+fit.whr.who.only.4 = lm(life.expectancy~.-under.five.deaths.shift1.log-income.composition-thin.5.9.power0.15, data = transformed.who)
+summary(fit.whr.who.only.4)
+vif(fit.whr.who.only.4)
+```
+
+## Appendix H: Eliminating Variables with VIFs for Combined WHO and WHR Predictors
+```{r}
+fit.who.and.whr.1 = lm(life.expectancy~., data = transformed.who.and.whr)
+summary(fit.who.and.whr.1)
+
+# Examine VIFs
+vif(fit.who.and.whr.1)
+
+# Big multicollinearity issues, let's eliminate under.five.deaths
+fit.who.and.whr.2 = lm(life.expectancy~.-under.five.deaths.shift1.log, data = transformed.who.and.whr)
+summary(fit.who.and.whr.2)
+vif(fit.who.and.whr.2)
+
+# Still multicollinearity issues, let's eliminate income.composition
+fit.who.and.whr.3 = lm(life.expectancy~.-under.five.deaths.shift1.log-income.composition, data = transformed.who.and.whr)
+summary(fit.who.and.whr.3)
+vif(fit.who.and.whr.3)
+
+# Still multicollinearity issues, let's eliminate thin.10.19
+fit.who.and.whr.4 = lm(life.expectancy~.-under.five.deaths.shift1.log-income.composition-thin.10.19.power0.15, data = transformed.who.and.whr)
+summary(fit.who.and.whr.4)
+vif(fit.who.and.whr.4)
+
+# Use stepwise
+fit.who.and.whr.5 = stepAIC(fit.who.and.whr.4, direction = "both", trace = 0)
+summary(fit.who.and.whr.5)
+
+# Eliminate variables one by one
+fit.who.and.whr.6 = update(fit.who.and.whr.5,.~.-freedom.to.make.life.choices)
+summary(fit.who.and.whr.6)
+
+fit.who.and.whr.7 = update(fit.who.and.whr.6,.~.-generosity)
+summary(fit.who.and.whr.7)
+
+fit.who.and.whr.8 = update(fit.who.and.whr.7,.~.-diphtheria)
+summary(fit.who.and.whr.8)
+
+fit.who.and.whr.9 = update(fit.who.and.whr.8,.~.-democratic.quality)
+summary(fit.who.and.whr.9)
+
+fit.who.and.whr.10 = update(fit.who.and.whr.9,.~.-schooling)
+summary(fit.who.and.whr.10)
+
+fit.who.and.whr.11 = update(fit.who.and.whr.10,.~.-thin.5.9.power0.15)
+summary(fit.who.and.whr.11)
+
+vif(fit.who.and.whr.11)
+```
