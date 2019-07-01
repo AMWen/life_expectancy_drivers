@@ -3,7 +3,7 @@ The goal of this project was to determine what factors are significant drivers f
 
 Health data was obtained from the WHO Global Health Observatory, economic data from the UN Human Development Reports, and social and emotional data from the UN's World Happiness Report.
 
-Data was cleaned and merged, then variables were transformed to meet linear model assumptions (lienarity, independent and normally distributed residuals with constant variance, no multicollinearity).
+Data was cleaned and merged, then variables were transformed to meet linear model assumptions (linearity, independent and normally distributed residuals with constant variance, no multicollinearity).
 
 Backward and forward stepwise regression was performed to determine what variables may be significant. 
 
